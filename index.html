@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Written in the Earth</title>
+  <style>
+    :root {
+      --bg-color: #0b0f14;
+      --card-bg: rgba(18, 24, 33, 0.75);
+      --accent: #4fc3f7;
+      --text: #f0f4f8;
+      --text-dim: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-color);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text);
+    }
+
+    /* Viewport & Canvas */
+    #viewport {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      position: relative;
+      cursor: grab;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #viewport.dragging {
+      cursor: grabbing;
+    }
+
+    #world {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+      transform-origin: 0 0;
+      position: absolute;
+      will-change: transform;
+    }
+
+    /* Letter Tile */
+    .letter-card {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+      transition: box-shadow 0.3s ease, filter 0.3s ease;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .letter-card:hover {
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.8), 0 0 0 2px var(--accent);
+    }
+
+    .letter-card img {
+      display: block;
+      height: 620px;
+      width: auto;
+      object-fit: contain;
+      pointer-events: none;
+    }
+
+    /* Top HUD Header */
+    .header {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .header h1 {
+      font-size: 1.25rem;
+      font-weight: 400;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--text);
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    }
+
+    .header p {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      margin-top: 4px;
+      letter-spacing: 1px;
+    }
+
+    /* Controls Bar */
+    .controls {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      display: flex;
+      gap: 10px;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      padding: 8px 14px;
+      border-radius: 30px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .btn {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--accent);
+    }
+
+    /* Info Drawer / Popup Modal */
+    #info-modal {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 18px 24px;
+      max-width: 420px;
+      width: 90%;
+      color: var(--text);
+      z-index: 101;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+    }
+
+    #info-modal.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    #info-modal h3 {
+      font-size: 1.1rem;
+      color: var(--accent);
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    #info-modal .coords {
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    #info-modal p {
+      font-size: 0.9rem;
+      line-height: 1.45;
+      color: #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>Written in the Earth</h1>
+    <p>Drag to explore • Scroll or pinch to zoom • Click a letter</p>
+  </div>
+
+  <div id="viewport">
+    <div id="world"></div>
+  </div>
+
+  <!-- Info Modal -->
+  <div id="info-modal">
+    <h3 id="modal-title">Letter</h3>
+    <div class="coords" id="modal-coords">Coordinates</div>
+    <p id="modal-desc">Description</p>
+  </div>
+
+  <!-- Bottom Navigation HUD -->
+  <div class="controls">
+    <button class="btn" id="btn-prev">← Prev</button>
+    <button class="btn" id="btn-reset">Fit All</button>
+    <button class="btn" id="btn-next">Next →</button>
+    <div style="width: 1px; height: 18px; background: rgba(255,255,255,0.15); margin: auto 4px;"></div>
+    <button class="btn" id="btn-zoom-in">+</button>
+    <button class="btn" id="btn-zoom-out">−</button>
+  </div>
+
+  <script>
+    // --- 1. DATA CONFIGURATION ---
+    // Use the actual image assets from each letter folder so the viewer spells "Katie"
+    const tilesData = [
+      {
+        letter: "K",
+        images: [
+          "letters/k/k-0-SirmilikNationalPark-Canada.png",
+          "letters/k/k-1-Golmund-China.png"
+        ],
+        location: "Sirmilik National Park, Canada",
+        coords: "72°59'N, 80°45'W",
+        note: "Glacial fingers carving through the Baffin Island mountains."
+      },
+      {
+        letter: "A",
+        images: [
+          "letters/a/a-0-hickman-Kentucky.png",
+          "letters/a/a-1-FarmIsland-Maine.png",
+          "letters/a/a-2-guakhmaz-azerbaijan.png",
+          "letters/a/a-3-YukonDelta-Alaska.png",
+          "letters/a/a-4-Lake-Mjøsa-Norway.png"
+        ],
+        location: "Hickman, Kentucky, USA",
+        coords: "36°34'N, 89°11'W",
+        note: "A river bend and landscape pattern shaped by slow-moving water."
+      },
+      {
+        letter: "T",
+        images: [
+          "letters/t/t-0-Liwa-United Arab Emirates.png",
+          "letters/t/t-1-LenaRiverDelta.png"
+        ],
+        location: "Liwa, United Arab Emirates",
+        coords: "23°00'N, 53°45'E",
+        note: "Dune formations and ridgelines shaped by wind patterns."
+      },
+      {
+        letter: "I",
+        images: [
+          "letters/i/i-0-Borgarbyggð-Iceland.png",
+          "letters/i/i-1-Canandaigua-Lake-NewYork.png",
+          "letters/i/i-2-EtoshaNationalPark-Namibia.png",
+          "letters/i/i-3-djebelOuarkziz-morocco.png",
+          "letters/i/i_5.jpg"
+        ],
+        location: "Borgarbyggð, Iceland",
+        coords: "64°32'N, 21°54'W",
+        note: "Mountain terrain and volcanic texture marking the Icelandic landscape."
+      },
+      {
+        letter: "E",
+        images: [
+          "letters/e/e-0-FirnfilledFjords-Tibet.png",
+          "letters/e/e-1-SeaofOkhotsk.png",
+          "letters/e/e-2-BellonaPlateau.png",
+          "letters/e/e-3-breiðamerkurjökull-iceland.png"
+        ],
+        location: "Firn-filled Fjords, Tibet",
+        coords: "30°00'N, 91°00'E",
+        note: "Ice-fall valleys and glacial forms creating a sculpted curve."
+      }
+    ];
+
+    // --- 2. SETUP WORLD ---
+    const viewport = document.getElementById('viewport');
+    const world = document.getElementById('world');
+    const modal = document.getElementById('info-modal');
+    let currentIndex = -1;
+
+    // Build Tiles
+    tilesData.forEach((tile, index) => {
+      tile.imageIndex = 0;
+
+      const card = document.createElement('div');
+      card.className = 'letter-card';
+      card.id = `card-${index}`;
+      card.innerHTML = `
+        <img src="${tile.images[tile.imageIndex]}" alt="Letter ${tile.letter}" />
+      `;
+      card.addEventListener('click', (e) => {
+        e.stopPropagation();
+        focusTile(index);
+      });
+      world.appendChild(card);
+    });
+
+    function updateCardImage(index) {
+      const tile = tilesData[index];
+      const card = document.getElementById(`card-${index}`);
+      if (!card) return;
+      const img = card.querySelector('img');
+      if (img) {
+        img.src = tile.images[tile.imageIndex];
+      }
+    }
+
+    function tickThroughSets() {
+      const weightedTiles = tilesData.flatMap((tile, index) =>
+        Array.from({ length: tile.images.length }, () => index)
+      );
+
+      const randomIndex = weightedTiles[Math.floor(Math.random() * weightedTiles.length)];
+      const tile = tilesData[randomIndex];
+      tile.imageIndex = (tile.imageIndex + 1) % tile.images.length;
+      updateCardImage(randomIndex);
+    }
+
+    let autoRotateTimer = setInterval(tickThroughSets, 1800);
+
+    // --- 3. PAN & ZOOM ENGINE ---
+    let state = {
+      x: 0,
+      y: 0,
+      scale: 1,
+      isDragging: false,
+      startX: 0,
+      startY: 0
+    };
+
+    function updateTransform(smooth = false) {
+      if (smooth) {
+        world.style.transition = 'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)';
+        setTimeout(() => world.style.transition = 'none', 450);
+      }
+      world.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+    }
+
+    function fitAll(smooth = true) {
+      modal.classList.remove('active');
+      currentIndex = -1;
+
+      const naturalWidth = world.scrollWidth;
+      const naturalHeight = world.scrollHeight;
+
+      const padding = 120;
+      const scaleX = (window.innerWidth - padding) / naturalWidth;
+      const scaleY = (window.innerHeight - padding) / naturalHeight;
+      state.scale = Math.min(Math.min(scaleX, scaleY), 1.2);
+
+      state.x = (window.innerWidth - naturalWidth * state.scale) / 2;
+      state.y = (window.innerHeight - naturalHeight * state.scale) / 2;
+
+      const minX = Math.min(0, (window.innerWidth - naturalWidth * state.scale) / 2);
+      const minY = Math.min(0, (window.innerHeight - naturalHeight * state.scale) / 2);
+      state.x = minX;
+      state.y = minY;
+
+      updateTransform(smooth);
+    }
+
+    function focusTile(index) {
+      currentIndex = index;
+      const data = tilesData[index];
+      const card = document.getElementById(`card-${index}`);
+      if (!card) return;
+
+      const targetScale = Math.min(window.innerHeight / 700, 1.4);
+      const cardWidth = card.offsetWidth;
+      const cardHeight = card.offsetHeight;
+      const cardCenterX = card.offsetLeft + cardWidth / 2;
+      const cardCenterY = card.offsetTop + cardHeight / 2;
+
+      const viewportCenterX = window.innerWidth / 2;
+      const viewportCenterY = window.innerHeight / 2;
+
+      state.scale = targetScale;
+      state.x = viewportCenterX - cardCenterX * targetScale;
+      state.y = viewportCenterY - cardCenterY * targetScale;
+
+      const worldWidth = world.scrollWidth * state.scale;
+      const worldHeight = world.scrollHeight * state.scale;
+      const maxX = window.innerWidth - worldWidth;
+      const maxY = window.innerHeight - worldHeight;
+
+      state.x = Math.min(0, Math.max(maxX, state.x));
+      state.y = Math.min(0, Math.max(maxY, state.y));
+
+      updateTransform(true);
+
+      // Show Info
+      document.getElementById('modal-title').textContent = `${data.letter} — ${data.location}`;
+      document.getElementById('modal-coords').textContent = data.coords;
+      document.getElementById('modal-desc').textContent = data.note;
+      modal.classList.add('active');
+    }
+
+    // Pointer / Mouse Drag Events
+    viewport.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      state.isDragging = true;
+      viewport.classList.add('dragging');
+      state.startX = e.clientX - state.x;
+      state.startY = e.clientY - state.y;
+      world.style.transition = 'none';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!state.isDragging) return;
+      state.x = e.clientX - state.startX;
+      state.y = e.clientY - state.startY;
+      updateTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+      state.isDragging = false;
+      viewport.classList.remove('dragging');
+    });
+
+    // Mouse Wheel Zooming around Cursor
+    viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomFactor = 1.12;
+      const mouseX = e.clientX;
+      const mouseY = e.clientY;
+
+      let newScale = e.deltaY < 0 ? state.scale * zoomFactor : state.scale / zoomFactor;
+      newScale = Math.max(0.2, Math.min(newScale, 3.5));
+
+      state.x = mouseX - (mouseX - state.x) * (newScale / state.scale);
+      state.y = mouseY - (mouseY - state.y) * (newScale / state.scale);
+      state.scale = newScale;
+
+      updateTransform();
+    }, { passive: false });
+
+    // Buttons
+    document.getElementById('btn-reset').addEventListener('click', () => fitAll(true));
+    document.getElementById('btn-zoom-in').addEventListener('click', () => {
+      state.scale = Math.min(state.scale * 1.3, 3.5);
+      updateTransform(true);
+    });
+    document.getElementById('btn-zoom-out').addEventListener('click', () => {
+      state.scale = Math.max(state.scale / 1.3, 0.2);
+      updateTransform(true);
+    });
+
+    document.getElementById('btn-next').addEventListener('click', () => {
+      const next = (currentIndex + 1) % tilesData.length;
+      focusTile(next);
+    });
+
+    document.getElementById('btn-prev').addEventListener('click', () => {
+      const prev = (currentIndex - 1 + tilesData.length) % tilesData.length;
+      focusTile(prev);
+    });
+
+    // Close modal on background click
+    viewport.addEventListener('click', () => {
+      modal.classList.remove('active');
+    });
+
+    // Pause auto-rotation while dragging; resume when released.
+    viewport.addEventListener('mousedown', () => {
+      clearInterval(autoRotateTimer);
+    });
+
+    window.addEventListener('mouseup', () => {
+      clearInterval(autoRotateTimer);
+      autoRotateTimer = setInterval(tickThroughSets, 1800);
+    });
+
+    // Initial positioning
+    window.addEventListener('load', () => fitAll(false));
+    window.addEventListener('resize', () => fitAll(false));
+  </script>
+</body>
+</html>
