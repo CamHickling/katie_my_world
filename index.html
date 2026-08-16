@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Katie in the Earth</title>
+  <title>❤ Katie in the Earth</title>
   <style>
     :root {
       --bg: #040b12;
@@ -138,34 +138,6 @@
       color: #ff5b6e;
     }
 
-    #globePin {
-      position: fixed;
-      left: 0;
-      top: 0;
-      width: 18px;
-      height: 18px;
-      border-radius: 50% 50% 50% 0;
-      background: #ff5b6e;
-      border: 2px solid rgba(255,255,255,0.85);
-      box-shadow: 0 0 0 7px rgba(255, 91, 110, 0.2);
-      transform: translate(-50%, -100%) rotate(-45deg);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 220ms ease, left 120ms linear, top 120ms linear;
-      z-index: 11;
-    }
-
-    #globePin::after {
-      content: "";
-      position: absolute;
-      width: 6px;
-      height: 6px;
-      left: 4px;
-      top: 4px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.9);
-    }
-
     #time {
       position: fixed;
       left: 16px;
@@ -242,8 +214,7 @@
     <span id="infoCoords">Coordinates: --</span>
   </div>
 
-  <div id="earthSignature">written in the earth <span class="heart">❤</span></div>
-  <div id="globePin" aria-hidden="true"></div>
+  <div id="earthSignature"><span id="daysSince">Days together: --</span></div>
 
   <div id="time">00:00</div>
 
@@ -251,7 +222,7 @@
     <button id="audioToggle" type="button" aria-label="Toggle audio">🔊</button>
   </div>
 
-  <audio id="backgroundAudio" loop preload="auto" src="Liang Lawrence - Endless Sundays (Official Visualiser).mp3"></audio>
+  <audio id="backgroundAudio" loop preload="auto" src="song.mp3"></audio>
 
   <script src="//cdn.jsdelivr.net/npm/globe.gl"></script>
   <script type="module">
@@ -375,6 +346,8 @@
         {
           title: 'A — Hickman, Kentucky',
           coords: '37.5° N, 88.9° W',
+          lat: 37.5,
+          lng: -88.9,
           text: 'A rolling Appalachian valley, a reference to the grounded warmth and texture of home.'
         },
         {
@@ -491,20 +464,30 @@
       ]
     };
 
-    const infoPanel = document.getElementById('infoPanel');
-    const infoTitle = document.getElementById('infoTitle');
-    const infoText = document.getElementById('infoText');
-    const infoCoords = document.getElementById('infoCoords');
-    const globePin = document.getElementById('globePin');
-    let activeGlobePin = null;
+      const infoPanel = document.getElementById('infoPanel');
+      const infoTitle = document.getElementById('infoTitle');
+      const infoText = document.getElementById('infoText');
+      const infoCoords = document.getElementById('infoCoords');
 
-    const updateGlobePinPosition = () => {
-      if (!activeGlobePin || !globe) return;
-      const globeRect = document.getElementById('globeViz').getBoundingClientRect();
-      const { x, y } = globe.getScreenCoords(activeGlobePin.lat, activeGlobePin.lng);
-      globePin.style.left = `${globeRect.left + x}px`;
-      globePin.style.top = `${globeRect.top + y}px`;
-      globePin.style.opacity = '1';
+    // No floating DOM pin: globe markers are rendered as rising cylinders on the globe.
+
+    // Parse human-readable coords like "37.5° N, 88.9° W" into numeric lat/lng
+    const parseCoordsString = (coordsStr) => {
+      if (!coordsStr || typeof coordsStr !== 'string') return null;
+      // Match patterns like "37.5° N, 88.9° W" or "18.8° S, 16.0° E"
+      const re = /([+-]?[0-9]+(?:\.[0-9]+)?)\s*°?\s*([NSns])\s*[,\\s]+\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*°?\s*([EWew])/;
+      const m = coordsStr.match(re);
+      if (!m) return null;
+      let lat = parseFloat(m[1]);
+      let latDir = m[2].toUpperCase();
+      let lng = parseFloat(m[3]);
+      let lngDir = m[4].toUpperCase();
+      if (isNaN(lat) || isNaN(lng)) return null;
+      if (latDir === 'S') lat = -Math.abs(lat);
+      if (latDir === 'N') lat = Math.abs(lat);
+      if (lngDir === 'W') lng = -Math.abs(lng);
+      if (lngDir === 'E') lng = Math.abs(lng);
+      return { lat, lng };
     };
 
     const getDisplayedLetterInfo = (card) => {
@@ -521,19 +504,41 @@
     const showLetterInfo = (card) => {
       const info = getDisplayedLetterInfo(card);
       if (!info) return;
+      // If a pending clear is scheduled, cancel it so panel won't be cleared mid-show
+      try {
+        if (pendingClearHandler && infoPanel) {
+          infoPanel.removeEventListener('transitionend', pendingClearHandler);
+          pendingClearHandler = null;
+        }
+      } catch (e) {}
       infoTitle.textContent = info.title;
       infoText.textContent = info.text;
       infoCoords.textContent = `Coordinates: ${info.coords}`;
 
-      const target = { lat: info.lat, lng: info.lng, altitude: 1.6 };
+      // Ensure we have numeric lat/lng. If missing, try to parse from the coords string.
+      let lat = info.lat;
+      let lng = info.lng;
+      if ((lat === undefined || lng === undefined || lat === null || lng === null) && info.coords) {
+        const parsed = parseCoordsString(info.coords);
+        if (parsed) {
+          lat = parsed.lat;
+          lng = parsed.lng;
+        }
+      }
+      if (lat === undefined || lng === undefined || lat === null || lng === null) {
+        // If we still don't have valid coords, just show the info panel and return.
+        infoPanel.classList.add('visible');
+        return;
+      }
+
+      const target = { lat: lat, lng: lng, altitude: 1.6 };
       globe.controls().autoRotate = false;
       globe.pointOfView(target, 2200);
 
-      activeGlobePin = { lat: info.lat, lng: info.lng };
       globe.pointsData([
         {
-          lat: info.lat,
-          lng: info.lng,
+          lat: lat,
+          lng: lng,
           color: '#ff5b6e',
           altitude: 0.15,
           size: 0.5
@@ -589,9 +594,41 @@
       const delay = getLetterCycleDelay(letter, images.length) + (letterOffsets[letter] || 0);
       setTimeout(() => rotateLetter(card), delay);
 
-      card.addEventListener('click', () => {
+      card.addEventListener('click', (e) => {
+        e.stopPropagation();
         showLetterInfo(card);
       });
+    });
+
+    // Hide info panel when clicking outside of a letter card.
+    // Clear the panel content only after the hide transition completes
+    // to avoid briefly showing the default placeholder.
+    let pendingClearHandler = null;
+    const scheduleClearPanel = () => {
+      if (!infoPanel) return;
+      pendingClearHandler = function (e) {
+        if (e.propertyName !== 'opacity') return;
+        infoTitle.textContent = '';
+        infoText.textContent = '';
+        infoCoords.textContent = '';
+        try { if (typeof globe !== 'undefined') globe.pointsData([]); } catch (err) {}
+        infoPanel.removeEventListener('transitionend', pendingClearHandler);
+        pendingClearHandler = null;
+      };
+      infoPanel.addEventListener('transitionend', pendingClearHandler);
+    };
+
+    const hideInfoPanel = () => {
+      if (!infoPanel) return;
+      // remove visible class to start hide transition
+      infoPanel.classList.remove('visible');
+      // schedule clearing after transition finishes
+      scheduleClearPanel();
+    };
+
+    document.addEventListener('click', hideInfoPanel);
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') hideInfoPanel();
     });
 
     const sunPosAt = dt => {
@@ -606,6 +643,32 @@
     const audioEl = document.getElementById('backgroundAudio');
     const audioToggle = document.getElementById('audioToggle');
     const globe = new Globe(document.getElementById('globeViz'));
+
+    // Days-since tracker for the signature
+    const daysEl = document.getElementById('daysSince');
+    const updateDaysSince = () => {
+      if (!daysEl) return;
+      const timeZone = 'America/Vancouver';
+      // Get the current date in Vancouver (year, month, day)
+      const nowParts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(new Date());
+      const nowObj = {};
+      nowParts.forEach(p => { if (p.type === 'year' || p.type === 'month' || p.type === 'day') nowObj[p.type] = Number(p.value); });
+      const nowY = nowObj.year;
+      const nowM = nowObj.month;
+      const nowD = nowObj.day;
+
+      // Start date is Oct 16, 2025 (Vancouver local)
+      const startY = 2025, startM = 10, startD = 16;
+
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const nowMidUTC = Date.UTC(nowY, nowM - 1, nowD);
+      const startMidUTC = Date.UTC(startY, startM - 1, startD);
+      // Inclusive count: include both start and today
+      const days = Math.floor((nowMidUTC - startMidUTC) / msPerDay) + 1;
+      daysEl.textContent = `Days together: ${days}`;
+    };
+    updateDaysSince();
+    setInterval(updateDaysSince, 60 * 60 * 1000);
 
     audioEl.muted = false;
     audioEl.loop = true;
@@ -634,6 +697,64 @@
     globe.controls().autoRotateSpeed = 0.45;
     globe.controls().enableDamping = true;
 
+    // Double-click the globe area to toggle spinning (auto-rotate)
+    // Right-click the globe to trigger a temporary fast spin that eases back to default.
+    const globeEl = document.getElementById('globeViz');
+    if (globeEl) {
+      globeEl.style.cursor = 'grab';
+
+      globeEl.addEventListener('dblclick', (ev) => {
+        ev.stopPropagation();
+        const controls = globe.controls();
+        const now = !!controls.autoRotate;
+        controls.autoRotate = !now;
+        if (controls.autoRotate && !controls.autoRotateSpeed) controls.autoRotateSpeed = 0.45;
+      });
+
+      let rampAnimationId = null;
+      let rampStart = null;
+      const rampDuration = 3500; // ms to ease back to default
+      const holdDuration = 700; // ms to hold the fast spin before easing
+      const fastSpeed = 36; // very fast spin speed for a "classroom globe" feeling
+      const defaultSpeed = 0.45;
+
+      const rampStep = (timestamp, startSpeed) => {
+        if (!rampStart) rampStart = timestamp;
+        const t = Math.min(1, (timestamp - rampStart) / rampDuration);
+        // ease out (quadratic)
+        const k = 1 - (1 - t) * (1 - t);
+        const speed = startSpeed + (defaultSpeed - startSpeed) * k;
+        try { globe.controls().autoRotateSpeed = speed; } catch (e) {}
+        if (t < 1) {
+          rampAnimationId = requestAnimationFrame((ts) => rampStep(ts, startSpeed));
+        } else {
+          rampAnimationId = null;
+          rampStart = null;
+          try { globe.controls().autoRotateSpeed = defaultSpeed; } catch (e) {}
+        }
+      };
+
+      globeEl.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const controls = globe.controls();
+        // ensure autoRotate is on
+        controls.autoRotate = true;
+        // immediately set to very fast speed
+        try { controls.autoRotateSpeed = fastSpeed; } catch (e) {}
+        // cancel any existing ramp
+        if (rampAnimationId) {
+          cancelAnimationFrame(rampAnimationId);
+          rampAnimationId = null;
+          rampStart = null;
+        }
+        // after a short hold, start easing back to default
+        setTimeout(() => {
+          requestAnimationFrame((ts) => rampStep(ts, fastSpeed));
+        }, holdDuration);
+      });
+    }
+
     Promise.all([
       new TextureLoader().loadAsync('//cdn.jsdelivr.net/npm/three-globe/example/img/earth-day.jpg'),
       new TextureLoader().loadAsync('//cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg')
@@ -658,10 +779,13 @@
           dt += VELOCITY * 60 * 1000;
           timeEl.textContent = new Date(dt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           material.uniforms.sunPosition.value.set(...sunPosAt(dt));
+          // No DOM pin to update; globe markers are rendered on the globe.
           requestAnimationFrame(animate);
         })();
       });
     });
+
+    // No DOM pin to reposition on resize/scroll.
   </script>
 </body>
 </html>
