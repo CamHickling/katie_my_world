@@ -138,6 +138,34 @@
       color: #ff5b6e;
     }
 
+    #globePin {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 18px;
+      height: 18px;
+      border-radius: 50% 50% 50% 0;
+      background: #ff5b6e;
+      border: 2px solid rgba(255,255,255,0.85);
+      box-shadow: 0 0 0 7px rgba(255, 91, 110, 0.2);
+      transform: translate(-50%, -100%) rotate(-45deg);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 220ms ease, left 120ms linear, top 120ms linear;
+      z-index: 11;
+    }
+
+    #globePin::after {
+      content: "";
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      left: 4px;
+      top: 4px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.9);
+    }
+
     #time {
       position: fixed;
       left: 16px;
@@ -182,14 +210,15 @@
   </div>
 
   <div id="earthSignature">written on the earth <span class="heart">❤</span></div>
+  <div id="globePin" aria-hidden="true"></div>
 
   <div id="time">00:00</div>
 
   <script src="//cdn.jsdelivr.net/npm/globe.gl"></script>
   <script type="module">
+    import { TextureLoader, ShaderMaterial, Vector2 } from 'https://esm.sh/three';
     import * as solar from 'https://esm.sh/solar-calculator';
 
-    const { TextureLoader, ShaderMaterial, Vector2 } = THREE;
     const VELOCITY = 1;
 
     const dayNightShader = {
@@ -291,11 +320,15 @@
         {
           title: 'K — Sirmilik National Park',
           coords: '63.4° N, 81.5° W',
+          lat: 63.4,
+          lng: -81.5,
           text: 'A remote Arctic landscape in Nunavut, chosen for its quiet, dramatic light and vast northern scale.'
         },
         {
           title: 'K — Golmund, China',
           coords: '41.8° N, 110.0° E',
+          lat: 41.8,
+          lng: 110.0,
           text: 'A wide, open setting with layered terrain, used to echo the letter’s broad, drifting energy.'
         }
       ],
@@ -423,6 +456,17 @@
     const infoTitle = document.getElementById('infoTitle');
     const infoText = document.getElementById('infoText');
     const infoCoords = document.getElementById('infoCoords');
+    const globePin = document.getElementById('globePin');
+    let activeGlobePin = null;
+
+    const updateGlobePinPosition = () => {
+      if (!activeGlobePin || !globe) return;
+      const globeRect = document.getElementById('globeViz').getBoundingClientRect();
+      const { x, y } = globe.getScreenCoords(activeGlobePin.lat, activeGlobePin.lng);
+      globePin.style.left = `${globeRect.left + x}px`;
+      globePin.style.top = `${globeRect.top + y}px`;
+      globePin.style.opacity = '1';
+    };
 
     const getDisplayedLetterInfo = (card) => {
       const letter = card.dataset.letter;
@@ -441,6 +485,12 @@
       infoTitle.textContent = info.title;
       infoText.textContent = info.text;
       infoCoords.textContent = `Coordinates: ${info.coords}`;
+
+      const target = { lat: info.lat, lng: info.lng, altitude: 1.6 };
+      globe.controls().autoRotate = false;
+      globe.pointOfView(target, 2200);
+
+      activeGlobePin = { lat: info.lat, lng: info.lng };
       globe.pointsData([
         {
           lat: info.lat,
@@ -455,6 +505,12 @@
         .pointAltitude('altitude')
         .pointRadius('size')
         .pointColor('color');
+
+      setTimeout(() => {
+        globe.controls().autoRotate = true;
+        globe.controls().autoRotateSpeed = 0.45;
+      }, 2200);
+
       infoPanel.classList.add('visible');
     };
 
@@ -519,6 +575,7 @@
       .pointColor('color');
     globe.controls().autoRotate = true;
     globe.controls().autoRotateSpeed = 0.45;
+    globe.controls().enableDamping = true;
 
     Promise.all([
       new TextureLoader().loadAsync('//cdn.jsdelivr.net/npm/three-globe/example/img/earth-day.jpg'),
